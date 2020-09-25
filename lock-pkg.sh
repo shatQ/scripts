@@ -30,6 +30,22 @@ is_url() {
         		
 }
 
+curl_url() {
+	# First check HEAD to see if url gives 200 response.
+	http_response=$(curl --silent --head --request GET $1 | head -1)
+	if ! echo $http_response | grep -qi 200; then
+		echo "error: curl $http_response"
+		exit 1
+	fi
+
+	rc=0
+	result=$(curl --silent $1) || rc=$? && true
+	if [[ $rc -ne 0 ]]; then
+		echo "error: curl non-zero exit code"
+	fi
+
+}
+
 run_cmd() {
 	cmd=$1
 	args=${@: 2}
@@ -38,7 +54,7 @@ run_cmd() {
 	result=$(eval "$cmd" "$args" 2>&1) || rc=$? && true
 	while read line; do echo "$cmd: '${line}'"; done <<< "$result"
     if [[ $rc -ne 0 ]]; then
-        echo "error: non-zero exit code"
+        echo "error: $cmd non-zero exit code"
         exit 1
     fi
 }
@@ -113,15 +129,17 @@ while :; do
 	        check_distro
 	        if [[ -n $2 ]]; then
 		        if is_url $2; then
-		            lock_pkg "$(curl $2)"
+			    curl_url $2
+			    packages=$(curl $2)
+		            lock_pkg "$packages"
 		        else
-	                lock_pkg "$2"
+			packages=""
+			while [[ $2 ]] && ! [[ "$2" =~ ^-.*$ ]]; do packages="$packages $2"; shift; done
+	                lock_pkg "$packages"
 		        fi
-		    shift
 	        else
                 echo 'error: "--lock-pkg" requires a non-empty option argument'
             fi
-	        shift
 	        break
             ;;
 
@@ -129,15 +147,16 @@ while :; do
 	        check_distro
 	        if [[ -n $2 ]]; then
 		        if is_url $2; then
-		            unlock_pkg "$(curl $2)"
+			    packages=$(curl $2)
+		            unlock_pkg "$packages"
 		        else
-	                unlock_pkg "$2"
+			packages=""
+                        while [[ $2 ]] && ! [[ "$2" =~ ^-.*$ ]]; do packages="$packages $2"; shift; done
+	                unlock_pkg "$packages"
 		        fi
-		    shift
 	        else
                 echo 'error: "--unlock-pkg" requires a non-empty option argument'
             fi
-	        shift
 	        break
             ;;
 
