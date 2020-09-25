@@ -30,6 +30,19 @@ is_url() {
         		
 }
 
+run_cmd() {
+	cmd=$1
+	args=${@: 2}
+
+    rc=0
+	result=$(eval "$cmd" "$args" 2>&1) || rc=$? && true
+	while read line; do echo "$cmd: '${line}'"; done <<< "$result"
+    if [[ $rc -ne 0 ]]; then
+        echo "error: non-zero exit code"
+        exit 1
+    fi
+}
+
 check_distro() {
     echo "identifying distribution"
     distro=$( ( lsb_release -ds || cat /etc/*release ) 2>/dev/null | head -n1)
@@ -37,7 +50,7 @@ check_distro() {
         pkg_manager="apt"
     elif echo $distro | grep -qi 'red hat' || echo $distro | grep -qi centos || echo $distro | grep -qi amazon; then
         pkg_manager="yum"
-    elif echo $distro | grep -qi suse
+    elif echo $distro | grep -qi suse; then
         pkg_manager="zypper"
     else
         echo "error: unknown distro"
@@ -46,16 +59,16 @@ check_distro() {
 
 
 lock_pkg() {
-    "locking package(s)"
+    echo "locking package(s)"
     for package in $1; do
 	    if [[ "$pkg_manager" == "apt" ]]; then
-            apt-mark hold $package
+            run_cmd apt-mark hold $package
 	    elif [[ "$pkg_manager" == "yum" ]]; then
-	        yum versionlock add $package
+	        run_cmd yum versionlock add $package
         elif [[	"$pkg_manager" == "zypper" ]]; then
-	        zypper addlock $package
+	        run_cmd zypper addlock $package
 	    else
-	        echo "error: non-matching condition."
+	        echo "error: non-matching condition"
         fi
     done
 }
@@ -64,11 +77,11 @@ unlock_pkg() {
     echo "unlocking package(s)"
     for package in $1; do
 	    if [[ "$pkg_manager" == "apt" ]]; then
-            apt-mark unhold $package
+            run_cmd apt-mark unhold $package
 	    elif [[ "$pkg_manager" == "yum" ]]; then
-	        yum versionlock delete $package
+	        run_cmd yum versionlock delete $package
         elif [[	"$pkg_manager" == "zypper" ]]; then
-	        zypper removelock $package
+	        run_cmd zypper removelock $package
 	    else
 	        echo "error: non-matching condition"
         fi
@@ -78,12 +91,12 @@ unlock_pkg() {
 unlock_all_pkg() {
     echo "unlocking all packages"
     if [[ "$pkg_manager" == "apt" ]]; then
-        apt-mark unhold $(apt-mark showhold)
+        run_cmd apt-mark unhold $(apt-mark showhold)
     elif [[ "$pkg_manager" == "yum" ]]; then
-        yum versionlock clear
+        run_cmd yum versionlock clear
     elif [[ "$pkg_manager" == "zypper" ]]; then
 	    # zypper removelock $(zypper locks | grep '^[[:digit:]]' | awk '{print $3}')
-        zypper removelock $(zypper --xmlout locks | grep -o '<name>.*</name>' | sed -e 's/<name>\(.*\)<\/name>/\1/g')
+        run_cmd zypper removelock $(zypper --xmlout locks | grep -o '<name>.*</name>' | sed -e 's/<name>\(.*\)<\/name>/\1/g')
     else
 	    echo "error: non-matching condition"
     fi	
@@ -139,7 +152,8 @@ while :; do
         *)
 	        echo "error: unknow option"
 	        show_help
-            break
+            exit
+            ;;
     esac
     shift
 done
