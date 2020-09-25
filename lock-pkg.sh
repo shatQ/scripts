@@ -31,19 +31,14 @@ is_url() {
 }
 
 curl_url() {
-	# First check HEAD to see if url gives 200 response.
+	# Check http header to see if url gives 200 response.
 	http_response=$(curl --silent --head --request GET $1 | head -1)
 	if ! echo $http_response | grep -qi 200; then
-		echo "error: curl $http_response"
+		echo "error: $http_response" >&2
 		exit 1
+	else
+	    echo $(curl $1)
 	fi
-
-	rc=0
-	result=$(curl --silent $1) || rc=$? && true
-	if [[ $rc -ne 0 ]]; then
-		echo "error: curl non-zero exit code"
-	fi
-
 }
 
 run_cmd() {
@@ -51,16 +46,15 @@ run_cmd() {
 	args=${@: 2}
 
     rc=0
-	result=$(eval "$cmd" "$args" 2>&1) || rc=$? && true
+	result=$(eval "$cmd" "$args" 2>&1) || rc=$?
 	while read line; do echo "$cmd: '${line}'"; done <<< "$result"
     if [[ $rc -ne 0 ]]; then
-        echo "error: $cmd non-zero exit code"
+        echo "error: $cmd non-zero exit code [$rc]"
         exit 1
     fi
 }
 
 check_distro() {
-    echo "identifying distribution"
     distro=$( ( lsb_release -ds || cat /etc/*release ) 2>/dev/null | head -n1)
     if echo $distro | grep -qi ubuntu || echo $distro | grep -qi debian; then
         pkg_manager="apt"
@@ -75,7 +69,6 @@ check_distro() {
 
 
 lock_pkg() {
-    echo "locking package(s)"
     for package in $1; do
 	    if [[ "$pkg_manager" == "apt" ]]; then
             run_cmd apt-mark hold $package
@@ -90,7 +83,6 @@ lock_pkg() {
 }
 
 unlock_pkg() {
-    echo "unlocking package(s)"
     for package in $1; do
 	    if [[ "$pkg_manager" == "apt" ]]; then
             run_cmd apt-mark unhold $package
@@ -105,7 +97,6 @@ unlock_pkg() {
 }
 
 unlock_all_pkg() {
-    echo "unlocking all packages"
     if [[ "$pkg_manager" == "apt" ]]; then
         run_cmd apt-mark unhold $(apt-mark showhold)
     elif [[ "$pkg_manager" == "yum" ]]; then
@@ -127,14 +118,16 @@ while :; do
 
         -l|--lock-pkg)
 	        check_distro
+    		echo "locking package(s)"
 	        if [[ -n $2 ]]; then
 		        if is_url $2; then
-			    curl_url $2
-			    packages=$(curl $2)
-		            lock_pkg "$packages"
+			    echo "fetching package's list from $2"
+			    packages=$(curl_url $2)
+			    lock_pkg "$packages"
 		        else
 			packages=""
-			while [[ $2 ]] && ! [[ "$2" =~ ^-.*$ ]]; do packages="$packages $2"; shift; done
+			# while [[ $2 ]] && ! [[ "$2" =~ ^-.*$ ]]; do packages="$packages $2"; shift; done
+			while [[ $2 ]] && echo $2 | grep --quiet --ignore-case --invert-match '^-.*$'; do packages="$packages $2"; shift; done
 	                lock_pkg "$packages"
 		        fi
 	        else
@@ -145,13 +138,16 @@ while :; do
 
         -u|--unlock-pkg)
 	        check_distro
+    		echo "unlocking package(s)"
 	        if [[ -n $2 ]]; then
 		        if is_url $2; then
-			    packages=$(curl $2)
+			    echo "fetching package's list from $2"
+			    packages=$(curl_url $2)
 		            unlock_pkg "$packages"
 		        else
 			packages=""
-                        while [[ $2 ]] && ! [[ "$2" =~ ^-.*$ ]]; do packages="$packages $2"; shift; done
+                        # while [[ $2 ]] && ! [[ "$2" =~ ^-.*$ ]]; do packages="$packages $2"; shift; done
+			while [[ $2 ]] && echo $2 | grep --quiet --ignore-case --invert-match '^-.*$'; do packages="$packages $2"; shift; done
 	                unlock_pkg "$packages"
 		        fi
 	        else
@@ -163,6 +159,7 @@ while :; do
 
 	    -U|--unlock-all-pkg)
 	        check_distro
+    		echo "unlocking all packages"
 	        unlock_all_pkg
 	        shift
 	        break
