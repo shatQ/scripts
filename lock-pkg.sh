@@ -2,17 +2,17 @@
 
 set -e
 
-pkg_manager=""
+PKG_MGR=""
 
 show_help() {
     cat <<EOF
-Usage: $(basename $0) [OPTION...] PACKAGES...
+Usage: $(basename $0) [-h] [-U] [-f -l | -u] packages...
 
 Options:
-  -h | --help				show this help
+  -h | --help				        show this help
   -l | --lock-pkg <packages>		lock packages (space-separated list or url)		
   -u | --unlock-pkg <packages>		unlock packages (space-separated list or url) 
-  -U | --unlock-all-pkg			clear all locks 
+  -U | --unlock-all-pkg			    clear all locks 
 
 Examples:
   $(basename $0) -l 'package1 package2'
@@ -41,73 +41,83 @@ curl_url() {
     fi
 }
 
-run_cmd() {
+wrapp_cmd() {
     cmd=$1
     args=${@:2}
 
     rc=0
     result=$(eval "$cmd" "$args" 2>&1) || rc=$?
     while read line; do echo "$cmd: '${line}'"; done <<<"$result"
-    if [[ $rc -ne 0 ]]; then
+    if [[$rc -eq 1 ]]; then
         echo "error: $cmd non-zero exit code [$rc]"
-        exit 1
+        exit 1 
+    elif [[ $rc -ne 0 ]]; then
+        echo "warning: $cmd non-zero exit code [$rc]"
     fi
 }
 
-check_distro() {
+id_distro() {
     distro=$( (lsb_release -ds || cat /etc/*release) 2>/dev/null | head -n1)
     if echo $distro | grep -qi ubuntu || echo $distro | grep -qi debian; then
-        pkg_manager="apt"
+        echo "$distro"
+        PKG_MGR="apt"
     elif echo $distro | grep -qi 'red hat' || echo $distro | grep -qi centos || echo $distro | grep -qi amazon; then
-        pkg_manager="yum"
+        echo "$distro"
+        PKG_MGR="yum"
     elif echo $distro | grep -qi suse; then
-        pkg_manager="zypper"
+        echo "$distro"
+        PKG_MGR="zypper"
     else
         echo "error: unknown distro"
+        exit 1
     fi
 }
 
 lock_pkg() {
     for package in $1; do
-        if [[ "$pkg_manager" == "apt" ]]; then
-            run_cmd apt-mark hold $package
-        elif [[ "$pkg_manager" == "yum" ]]; then
-            run_cmd yum versionlock add $package
-        elif [[ "$pkg_manager" == "zypper" ]]; then
-            run_cmd zypper addlock $package
+        if [[ "$PKG_MGR" == "apt" ]]; then
+            wrapp_cmd apt-mark hold $package
+        elif [[ "$PKG_MGR" == "yum" ]]; then
+            wrapp_cmd yum versionlock add $package
+        elif [[ "$PKG_MGR" == "zypper" ]]; then
+            wrapp_cmd zypper addlock $package
         else
             echo "error: non-matching condition"
+            exit 1
         fi
     done
 }
 
 unlock_pkg() {
     for package in $1; do
-        if [[ "$pkg_manager" == "apt" ]]; then
-            run_cmd apt-mark unhold $package
-        elif [[ "$pkg_manager" == "yum" ]]; then
-            run_cmd yum versionlock delete $package
-        elif [[ "$pkg_manager" == "zypper" ]]; then
-            run_cmd zypper removelock $package
+        if [[ "$PKG_MGR" == "apt" ]]; then
+            wrapp_cmd apt-mark unhold $package
+        elif [[ "$PKG_MGR" == "yum" ]]; then
+            wrapp_cmd yum versionlock delete $package
+        elif [[ "$PKG_MGR" == "zypper" ]]; then
+            wrapp_cmd zypper removelock $package
         else
             echo "error: non-matching condition"
+            exit 1
         fi
     done
 }
 
 unlock_all_pkg() {
-    if [[ "$pkg_manager" == "apt" ]]; then
-        run_cmd apt-mark unhold $(apt-mark showhold)
-    elif [[ "$pkg_manager" == "yum" ]]; then
-        run_cmd yum versionlock clear
-    elif [[ "$pkg_manager" == "zypper" ]]; then
+    if [[ "$PKG_MGR" == "apt" ]]; then
+        wrapp_cmd apt-mark unhold $(apt-mark showhold)
+    elif [[ "$PKG_MGR" == "yum" ]]; then
+        wrapp_cmd yum versionlock clear
+    elif [[ "$PKG_MGR" == "zypper" ]]; then
         # zypper removelock $(zypper locks | grep '^[[:digit:]]' | awk '{print $3}')
-        run_cmd zypper removelock $(zypper --xmlout locks | grep -o '<name>.*</name>' | sed -e 's/<name>\(.*\)<\/name>/\1/g')
+        wrapp_cmd zypper removelock $(zypper --xmlout locks | grep -o '<name>.*</name>' | sed -e 's/<name>\(.*\)<\/name>/\1/g')
     else
         echo "error: non-matching condition"
+        exit 1
     fi
 }
 
+opt_from_file=false
 while :; do
     case $1 in
     -h | --help)
@@ -115,13 +125,20 @@ while :; do
         exit
         ;;
 
+    -f | --from-file)
+        opt_from_file=true
+        ;;
+
     -l | --lock-pkg)
-        check_distro
+        id_distro
         echo "locking package(s)"
         if [[ -n $2 ]]; then
-            if is_url $2; then
+            if [[ $opt_from_file ]] && [[ is_url $2 ]]; then
                 echo "fetching package's list from $2"
                 packages=$(curl_url $2)
+                lock_pkg "$packages"
+            elif [[ $opt_from_file ]]; then
+                packages=$(cat $2)
                 lock_pkg "$packages"
             else
                 packages=""
@@ -134,12 +151,13 @@ while :; do
             fi
         else
             echo 'error: "--lock-pkg" requires a non-empty option argument'
+            exit 1
         fi
         break
         ;;
 
     -u | --unlock-pkg)
-        check_distro
+        echo "identifying distribution"; id_distro
         echo "unlocking package(s)"
         if [[ -n $2 ]]; then
             if is_url $2; then
@@ -157,12 +175,13 @@ while :; do
             fi
         else
             echo 'error: "--unlock-pkg" requires a non-empty option argument'
+            exit 1
         fi
         break
         ;;
     
     -U | --unlock-all-pkg)
-        check_distro
+        id_distro
         echo "unlocking all packages"
         unlock_all_pkg
         shift
@@ -172,7 +191,7 @@ while :; do
     *)
         echo "error: unknow option"
         show_help
-        exit
+        exit 1
         ;;
     esac
     shift
