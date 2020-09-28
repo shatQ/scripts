@@ -6,17 +6,18 @@ PKG_MGR=""
 
 show_help() {
     cat <<EOF
-Usage: $(basename $0) [-h] [-U] [-f -l | -u] packages...
+Usage: $(basename $0) [-h] [-U] [-f [-l | -u]] [packages...]
 
 Options:
   -h | --help				        show this help
-  -l | --lock-pkg <packages>		lock packages (space-separated list or url)		
-  -u | --unlock-pkg <packages>		unlock packages (space-separated list or url) 
+  -f | --from-file                  read packages from file (local or remote)
+  -l | --lock-pkg <packages>		lock packages		
+  -u | --unlock-pkg <packages>		unlock packages
   -U | --unlock-all-pkg			    clear all locks 
 
 Examples:
   $(basename $0) -l 'package1 package2'
-  $(basename $0) -l http://example.com/packages.txt   
+  $(basename $0) -f -l http://example.com/packages.txt   
 
 EOF
 }
@@ -31,7 +32,7 @@ is_url() {
 }
 
 curl_url() {
-    # Check http header to see if url gives 200 response.
+    # check http header to see if url gives 200 response.
     http_response=$(curl --silent --head --request GET $1 | head -1)
     if ! echo $http_response | grep -qi 200; then
         echo "error: $http_response" >&2
@@ -50,7 +51,7 @@ wrapp_cmd() {
     while read line; do echo "$cmd: '${line}'"; done <<<"$result"
     if [[ $rc -eq 1 ]]; then
         echo "error: $cmd non-zero exit code [$rc]"
-        exit 1 
+        exit 1
     elif [[ $rc -ne 0 ]]; then
         echo "warning: $cmd non-zero exit code [$rc]"
     fi
@@ -130,18 +131,20 @@ while :; do
         ;;
 
     -l | --lock-pkg)
-        echo "identifying distribution"; id_distro
+        echo "identifying distribution: $(id_distro)"
         echo "locking package(s)"
         if [[ -n $2 ]]; then
-            if $opt_from_file  && is_url $2; then
-                echo "fetching package's list from $2"
+            if $opt_from_file && is_url $2; then
+                echo "fetching package's list from remote file '$2'"
                 packages=$(curl_url $2)
                 lock_pkg "$packages"
             elif $opt_from_file; then
+                echo "fetching package's list from local file '$2'"
                 packages=$(cat $2)
                 lock_pkg "$packages"
             else
                 packages=""
+                # using grep as it's more portable than regex
                 # while [[ $2 ]] && ! [[ "$2" =~ ^-.*$ ]]; do packages="$packages $2"; shift; done
                 while [[ $2 ]] && echo $2 | grep --quiet --ignore-case --invert-match '^-.*$'; do
                     packages="$packages $2"
@@ -157,15 +160,20 @@ while :; do
         ;;
 
     -u | --unlock-pkg)
-        echo "identifying distribution"; id_distro
+        echo "identifying distribution: $(id_distro)"
         echo "unlocking package(s)"
         if [[ -n $2 ]]; then
-            if is_url $2; then
-                echo "fetching package's list from $2"
+            if $opt_from_file && is_url $2; then
+                echo "fetching package's list from remote file '$2'"
                 packages=$(curl_url $2)
                 unlock_pkg "$packages"
+            elif $opt_from_file; then
+                echo "fetching package's list from local file '$2'"
+                packages=$(cat $2)
+                lock_pkg "$packages"
             else
                 packages=""
+                # using grep as it's more portable than regex
                 # while [[ $2 ]] && ! [[ "$2" =~ ^-.*$ ]]; do packages="$packages $2"; shift; done
                 while [[ $2 ]] && echo $2 | grep --quiet --ignore-case --invert-match '^-.*$'; do
                     packages="$packages $2"
@@ -179,9 +187,9 @@ while :; do
         fi
         break
         ;;
-    
+
     -U | --unlock-all-pkg)
-        id_distro
+        echo "identifying distribution: $(id_distro)"
         echo "unlocking all packages"
         unlock_all_pkg
         shift
