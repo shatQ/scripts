@@ -10,11 +10,11 @@ show_help() {
 Usage: $(basename $0) [-h] [-U] [-f [-l | -u]] [packages...]
 
 Options:
-  -h | --help				        show this help
-  -f | --from-file                  read packages from file (local or remote)
+  -h | --help				show this help
+  -f | --from-file			read packages from file (local or remote)
   -l | --lock-pkg <packages>		lock packages		
   -u | --unlock-pkg <packages>		unlock packages
-  -U | --unlock-all-pkg			    clear all locks 
+  -U | --unlock-all-pkg			clear all locks 
 
 Examples:
   $(basename $0) -l package1 package2
