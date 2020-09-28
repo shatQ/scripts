@@ -3,6 +3,7 @@
 set -e
 
 PKG_MGR=""
+DISTRO=""
 
 show_help() {
     cat <<EOF
@@ -49,27 +50,22 @@ wrapp_cmd() {
     rc=0
     result=$(eval "$cmd" "$args" 2>&1) || rc=$?
     while read line; do echo "$cmd: '${line}'"; done <<<"$result"
-    if [[ $rc -eq 1 ]]; then
+    if [[ $rc -ne 0 ]]; then
         echo "error: $cmd non-zero exit code [$rc]"
         exit 1
-    elif [[ $rc -ne 0 ]]; then
-        echo "warning: $cmd non-zero exit code [$rc]"
     fi
 }
 
 id_distro() {
-    distro=$( (lsb_release -ds || cat /etc/*release) 2>/dev/null | head -n1)
-    if echo $distro | grep -qi ubuntu || echo $distro | grep -qi debian; then
-        echo "$distro"
+    DISTRO=$( (lsb_release -ds || cat /etc/*release) 2>/dev/null | head -n1)
+    if echo $DISTRO | grep -qi ubuntu || echo $DISTRO | grep -qi debian; then
         PKG_MGR="apt"
-    elif echo $distro | grep -qi 'red hat' || echo $distro | grep -qi centos || echo $distro | grep -qi amazon; then
-        echo "$distro"
+    elif echo $DISTRO | grep -qi 'red hat' || echo $DISTRO | grep -qi centos || echo $DISTRO | grep -qi amazon; then
         PKG_MGR="yum"
-    elif echo $distro | grep -qi suse; then
-        echo "$distro"
+    elif echo $DISTRO | grep -qi suse; then
         PKG_MGR="zypper"
     else
-        echo "error: unknown distro"
+        echo "error: unknown distribution"
         exit 1
     fi
 }
@@ -131,8 +127,9 @@ while :; do
         ;;
 
     -l | --lock-pkg)
-        echo "identifying distribution: $(id_distro)"
-        echo "locking package(s)"
+	id_distro
+        echo "identifying distribution: $DISTRO"
+        echo "locking package(s) using: '$PKG_MGR'"
         if [[ -n $2 ]]; then
             if $opt_from_file && is_url $2; then
                 echo "fetching package's list from remote file '$2'"
@@ -160,8 +157,9 @@ while :; do
         ;;
 
     -u | --unlock-pkg)
-        echo "identifying distribution: $(id_distro)"
-        echo "unlocking package(s)"
+	id_distro
+        echo "identifying distribution: $DISTRO"
+        echo "unlocking package(s) using: '$PKG_MGR'"
         if [[ -n $2 ]]; then
             if $opt_from_file && is_url $2; then
                 echo "fetching package's list from remote file '$2'"
@@ -189,8 +187,9 @@ while :; do
         ;;
 
     -U | --unlock-all-pkg)
-        echo "identifying distribution: $(id_distro)"
-        echo "unlocking all packages"
+	id_distro
+        echo "identifying distribution: $DISTRO"
+        echo "unlocking all packages using: '$PKG_MGR'"
         unlock_all_pkg
         shift
         break
