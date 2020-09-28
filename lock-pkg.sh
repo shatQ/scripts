@@ -48,7 +48,7 @@ wrapp_cmd() {
     rc=0
     result=$(eval "$cmd" "$args" 2>&1) || rc=$?
     while read line; do echo "$cmd: '${line}'"; done <<<"$result"
-    if [[$rc -eq 1 ]]; then
+    if [[ $rc -eq 1 ]]; then
         echo "error: $cmd non-zero exit code [$rc]"
         exit 1 
     elif [[ $rc -ne 0 ]]; then
@@ -130,14 +130,14 @@ while :; do
         ;;
 
     -l | --lock-pkg)
-        id_distro
+        echo "identifying distribution"; id_distro
         echo "locking package(s)"
         if [[ -n $2 ]]; then
-            if [[ $opt_from_file ]] && [[ is_url $2 ]]; then
+            if $opt_from_file  && is_url $2; then
                 echo "fetching package's list from $2"
                 packages=$(curl_url $2)
                 lock_pkg "$packages"
-            elif [[ $opt_from_file ]]; then
+            elif $opt_from_file; then
                 packages=$(cat $2)
                 lock_pkg "$packages"
             else
