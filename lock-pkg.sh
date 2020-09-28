@@ -17,7 +17,7 @@ Options:
   -U | --unlock-all-pkg			    clear all locks 
 
 Examples:
-  $(basename $0) -l 'package1 package2'
+  $(basename $0) -l package1 package2
   $(basename $0) -f -l http://example.com/packages.txt   
 
 EOF
@@ -44,6 +44,8 @@ curl_url() {
 }
 
 wrapp_cmd() {
+    # this function wrapps command execution by providing formatted output
+    # and it exits with error if command returns status code different than 0
     cmd=$1
     args=${@:2}
 
@@ -127,7 +129,7 @@ while :; do
         ;;
 
     -l | --lock-pkg)
-	id_distro
+        id_distro
         echo "identifying distribution: $DISTRO"
         echo "locking package(s) using: '$PKG_MGR'"
         if [[ -n $2 ]]; then
@@ -157,7 +159,7 @@ while :; do
         ;;
 
     -u | --unlock-pkg)
-	id_distro
+        id_distro
         echo "identifying distribution: $DISTRO"
         echo "unlocking package(s) using: '$PKG_MGR'"
         if [[ -n $2 ]]; then
@@ -187,11 +189,10 @@ while :; do
         ;;
 
     -U | --unlock-all-pkg)
-	id_distro
+        id_distro
         echo "identifying distribution: $DISTRO"
         echo "unlocking all packages using: '$PKG_MGR'"
         unlock_all_pkg
-        shift
         break
         ;;
 
